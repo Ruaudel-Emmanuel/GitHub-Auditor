@@ -1,16 +1,24 @@
 {
   "name": "GitHub Auditor",
-  "description": "Audit quotidien de tous les projets GitHub actifs à 06h00. Liste les repos GitHub, analyse chaque projet actif via Ollama qwen2.5:3b (prompt « Architecte Collaborateur »), envoie le rapport sur Telegram chat 8634051625.",
+  "description": "Audit quotidien groupé de tous les dépôts GitHub actifs à 06h00 — une analyse Ollama unique (qwen2.5:3b) pour tous les repos, rapport Telegram.",
   "nodes": [
     {
       "id": "7a940423-94c6-4daa-bdcc-f3d744c20a63",
       "name": "Horloge (06h00 tous les jours)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-1800, 300],
+      "position": [
+        -1808,
+        304
+      ],
       "parameters": {
         "rule": {
-          "interval": [{"field": "cronExpression", "expression": "0 6 * * *"}]
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
         }
       }
     },
@@ -19,20 +27,24 @@
       "name": "Lister les dépôts GitHub actifs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-1560, 300],
+      "position": [
+        -1568,
+        304
+      ],
       "parameters": {
-        "method": "GET",
         "url": "https://api.github.com/user/repos?per_page=100&sort=updated&direction=desc&type=all",
-        "sendBody": false,
-        "sendQuery": false,
+        "options": {
+          "timeout": 30000,
+          "redirect": {}
+        },
         "sendHeaders": true,
-        "options": {"timeout": 30000, "redirect": {}},
-        "responseFormat": "json",
         "headerParameters": {
-          "parameters": [{
-            "name": "Authorization",
-            "value": "=Bearer {{ $env.GITHUB_PAT }}"
-          }]
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_PAT }}"
+            }
+          ]
         }
       }
     },
@@ -41,9 +53,12 @@
       "name": "Filtrer et préparer l'analyse",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-1260, 300],
+      "position": [
+        -1264,
+        304
+      ],
       "parameters": {
-        "jsCode": "// GitHub Auditor — filtre les repos actifs et construit le payload Ollama\nconst items = $input.all().flatMap(i => i.json);\nconst results = [];\n// Le system prompt complet « Architecte Collaborateur » est tronqué ici pour lisibilité.\n// Voir le README.md pour le texte intégral.\nconst system = \"Tu es un IA expert, un \\\"Architecte Collaborateur\\\" de code. [...]\";\n\nfor (const repo of items) {\n  if (repo.archived === true || repo.disabled === true) continue;\n  if (!repo.permissions || (!repo.permissions.push && !repo.permissions.admin)) continue;\n\n  const meta = {\n    name: repo.name || '',\n    full_name: repo.full_name || '',\n    desc: repo.description || '(aucune description)',\n    lang: repo.language || 'Non spécifié',\n    topics: (repo.topics && repo.topics.length) ? repo.topics.join(', ') : 'Aucun',\n    pushed: repo.pushed_at ? repo.pushed_at.slice(0,10) : 'Inconnu',\n    created: repo.created_at ? repo.created_at.slice(0,10) : 'Inconnu',\n    issues: repo.open_issues_count || 0,\n    branch: repo.default_branch || 'main',\n    visibility: repo.private ? 'Privé' : 'Public',\n    size: repo.size ? Math.round(repo.size / 1024) + ' Mo' : 'Inconnu',\n  };\n\n  const user = `Analyse le dépôt GitHub suivant et fournis un rapport d'audit complet.\\n\\n**Dépôt :** ${meta.full_name}\\n**Description :** ${meta.desc}\\n**Langage principal :** ${meta.lang}\\n**Sujets / Topics :** ${meta.topics}\\n**Visibilité :** ${meta.visibility}\\n**Branche par défaut :** ${meta.branch}\\n**Taille estimée :** ${meta.size}\\n**Créé le :** ${meta.created}\\n**Dernier push :** ${meta.pushed}\\n**Problèmes ouverts :** ${meta.issues}\\n\\nRédige le rapport en suivant le format prescrit.`;\n\n  const payload = {\n    model: 'qwen2.5:3b',\n    stream: false,\n    keep_alive: 0,\n    options: { num_ctx: 8192, temperature: 0.3, num_predict: 800 },\n    messages: [\n      { role: 'system', content: system },\n      { role: 'user', content: user }\n    ]\n  };\n\n  results.push({\n    json: {\n      repo_name: meta.full_name,\n      repo_desc: meta.desc,\n      repo_visibility: meta.visibility,\n      repo_lang: meta.lang,\n      ollama_body: JSON.stringify(payload)\n    }\n  });\n}\nreturn results;"
+        "jsCode": "// GitHub Auditor - filtre et groupe tous les repos en une analyse unique\nconst items = $input.all().flatMap(i => i.json);\nconst activeRepos = items.filter(r =>\n  r.archived !== true && r.disabled !== true &&\n  r.permissions && (r.permissions.push || r.permissions.admin)\n);\nif (activeRepos.length === 0) {\n  return [{ json: { repo_count: 0, repo_list: '', ollama_body: '' } }];\n}\nconst repoSummaries = activeRepos.map((r, i) =>\n  (i+1) + '. **' + r.full_name + '**\\\\n' +\n  '   Description: ' + (r.description || '(aucune)') + '\\\\n' +\n  '   Langage: ' + (r.language || 'N/A') + '\\\\n' +\n  '   Topics: ' + ((r.topics && r.topics.length) ? r.topics.join(', ') : 'aucun') + '\\\\n' +\n  '   Activite: ' + (r.pushed_at ? r.pushed_at.slice(0,10) : '?') + '\\\\n' +\n  '   Issues: ' + (r.open_issues_count || 0) + '\\\\n' +\n  '   Visibilite: ' + (r.private ? 'Prive' : 'Public')\n).join('\\\\n\\\\n');\nconst system = \"Tu es un IA expert, un \\\"Architecte Collaborateur\\\" de code. Ta mission est de devenir le pair programmeur le plus comp\\u00e9tent, le plus m\\u00e9ticuleux, mais surtout le plus positif et le plus encourageant sur tous les projets GitHub que tu examines.\\n\\n\\ud83c\\udfaf 1. D\\u00e9finition du R\\u00f4le et de la Philosophie (Le Ton)\\nPersona : Tu es un mentor technique de niveau \\\"Staff Engineer\\\".\\nTonalit\\u00e9 Immuable : Toujours enthousiaste, ultra-constructif, respectueux.\\n\\n\\ud83d\\udca1 2. M\\u00e9thode d'Analyse\\nA. Issue Thinking \\u00b7 B. Bug/Risque \\u00b7 C. Code Review \\u00b7 D. Pull Request\\n\\n\\ud83d\\udcca 3. Format de Sortie\\n\\u2728 Rapport d'Audit Quotidien\\n\\ud83d\\udd0d Observations \\u00b7 \\u2728 Axes d'am\\u00e9lioration \\u00b7 \\ud83d\\udee0 Prochaine \\u00e9tape \\u00b7 \\u2705 Synth\\u00e8se\\nTermine par \\ud83c\\udfc6 Top 3 des d\\u00e9p\\u00f4ts les plus prometteurs.\";\nconst user = 'Analyse les depots GitHub actifs suivants.\\\\n\\\\n' +\n  'Liste des ' + activeRepos.length + ' depots a analyser :\\\\n\\\\n' +\n  repoSummaries + '\\\\n\\\\n' +\n  'Pour chaque depot : Observations, Axes d\\\\'amelioration, Prochaine etape, Synthese.\\\\n' +\n  'Termine par un Top 3 des depots les plus prometteurs.';\nconst payload = {\n  model: 'qwen2.5:3b',\n  stream: false,\n  keep_alive: 0,\n  options: { num_ctx: 16384, temperature: 0.3, num_predict: 2000 },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }]\n};\nreturn [{ json: {\n  repo_count: activeRepos.length,\n  repo_list: activeRepos.map(r => r.full_name).join(', '),\n  ollama_body: JSON.stringify(payload)\n} }];"
       }
     },
     {
@@ -51,19 +66,25 @@
       "name": "Analyser avec Ollama (qwen2.5:3b)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-940, 300],
+      "position": [
+        -944,
+        304
+      ],
       "parameters": {
-        "method": "POST",
         "url": "http://ollama:11434/api/chat",
-        "sendBody": true,
-        "sendQuery": false,
-        "sendHeaders": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
         "body": "={{ $json.ollama_body }}",
-        "options": {"timeout": 300000, "redirect": {}},
-        "responseFormat": "json",
-        "headerParameters": {"parameters": []}
+        "method": "POST",
+        "options": {
+          "timeout": 300000,
+          "redirect": {}
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "sendHeaders": true,
+        "rawContentType": "application/json",
+        "headerParameters": {
+          "parameters": []
+        }
       }
     },
     {
@@ -71,9 +92,12 @@
       "name": "Formater le rapport Telegram",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-640, 300],
+      "position": [
+        -640,
+        304
+      ],
       "parameters": {
-        "jsCode": "const item = $input.first().json || {};\nconst meta = $('Filtrer et préparer l\\'analyse').item.json;\nconst repoName = meta ? meta.repo_name : 'Repo inconnu';\n\nlet analysis = '';\nif (item.message && item.message.content) {\n  analysis = item.message.content.trim();\n} else if (item.response && item.response.message && item.response.message.content) {\n  analysis = item.response.message.content.trim();\n} else if (typeof item === 'object') {\n  analysis = JSON.stringify(item).slice(0, 2000);\n}\n\nif (analysis.length > 4000) {\n  analysis = analysis.slice(0, 3997) + '...';\n}\n\nconst header = `\\ud83e\\uddd1\\u200d\\ud83d\\udcbb Audit GitHub : ${repoName}`;\nconst message = `${header}\\n\\n${analysis}`;\n\nif (message.length > 4096) {\n  return [{ json: { analysis: `${header}\\n\\nRapport trop long, voici le début :\\n\\n${analysis.slice(0, 3600)}` } }];\n}\nreturn [{ json: { analysis: message } }];"
+        "jsCode": "// GitHub Auditor - formate la reponse Ollama groupee pour Telegram\nconst item = $input.first().json || {};\nconst meta = $('Filtrer et preparer l\\'analyse').item.json;\nconst repoCount = meta ? meta.repo_count : 0;\nif (!repoCount || repoCount === 0) {\n  return [{ json: { analysis: '\\\\u2705 Aucun depot actif a auditer aujourd\\'hui.' } }];\n}\nlet analysis = '';\nif (item.message && item.message.content) analysis = item.message.content.trim();\nelse if (item.response && item.response.message && item.response.message.content) analysis = item.response.message.content.trim();\nelse if (typeof item === 'object') analysis = JSON.stringify(item).slice(0, 2000);\nif (!analysis || analysis.length < 50) return [{ json: { analysis: '\\\\u26a0 Analyse Ollama non disponible.' } }];\nconst header = '\\\\ud83e\\\\uddd1\\\\u200d\\\\ud83d\\\\udcbb Audit GitHub -- ' + repoCount + ' depots analyses';\nif (analysis.length > 3900) analysis = analysis.slice(0, 3897) + '\\\\u2026';\nreturn [{ json: { analysis: header + '\\\\n\\\\n' + analysis } }];"
       }
     },
     {
@@ -81,37 +105,88 @@
       "name": "Envoyer sur Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [-360, 300],
+      "position": [
+        -368,
+        304
+      ],
+      "webhookId": "06afd9e7-05f0-47b1-91c6-00dd336acabe",
       "parameters": {
         "text": "={{ $json.analysis }}",
         "chatId": "8634051625",
         "additionalFields": {
           "disable_notification": true
         }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "HMJozlOGjctgoQtt",
+          "name": "Telegram account"
+        }
       }
     }
   ],
   "settings": {
     "timezone": "Europe/Paris",
-    "saveManualExecutions": true,
+    "binaryMode": "separate",
+    "callerPolicy": "never",
     "executionOrder": "v1",
-    "callerPolicy": "never"
+    "saveManualExecutions": true
   },
   "connections": {
     "Horloge (06h00 tous les jours)": {
-      "main": [[{"node": "Lister les dépôts GitHub actifs", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Lister les dépôts GitHub actifs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Lister les dépôts GitHub actifs": {
-      "main": [[{"node": "Filtrer et préparer l'analyse", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Filtrer et préparer l'analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filtrer et préparer l'analyse": {
-      "main": [[{"node": "Analyser avec Ollama (qwen2.5:3b)", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Analyser avec Ollama (qwen2.5:3b)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Analyser avec Ollama (qwen2.5:3b)": {
-      "main": [[{"node": "Formater le rapport Telegram", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Formater le rapport Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Formater le rapport Telegram": {
-      "main": [[{"node": "Envoyer sur Telegram", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Envoyer sur Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   }
 }
