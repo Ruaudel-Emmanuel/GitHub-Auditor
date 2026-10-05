@@ -1,0 +1,200 @@
+{
+  "id": "0a443cb4-c9f8-4c9c-9857-c105eb1fa2ab",
+  "name": "GitHub Auditor",
+  "active": true,
+  "versionId": "4981ac54-22b4-494e-bd0a-aaec638996e3",
+  "createdAt": "2026-10-02 10:00:00+00",
+  "updatedAt": "2026-10-05 11:39:58.978+00",
+  "nodes": [
+    {
+      "id": "7a940423-94c6-4daa-bdcc-f3d744c20a63",
+      "name": "Horloge (06h00 tous les jours)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        -1808,
+        304
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "3d8d4352-aa3c-4340-bddb-7eab02a03c59",
+      "name": "Lister les dépôts GitHub actifs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1568,
+        304
+      ],
+      "parameters": {
+        "url": "https://api.github.com/user/repos?per_page=100&sort=updated&direction=desc&type=all",
+        "options": {
+          "timeout": 30000,
+          "redirect": {}
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_PAT }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "18edc322-c19c-4659-a15f-b67c46b94987",
+      "name": "Analyser avec Ollama (qwen2.5:3b)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -944,
+        304
+      ],
+      "parameters": {
+        "url": "http://ollama:11434/api/chat",
+        "body": "={{ $json.ollama_body }}",
+        "method": "POST",
+        "options": {
+          "timeout": 300000,
+          "redirect": {}
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "sendHeaders": true,
+        "rawContentType": "application/json",
+        "headerParameters": {
+          "parameters": []
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "75c7c4a2-5aaa-4b0c-af5f-f64ba9725c9f",
+      "name": "Envoyer sur Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        -368,
+        304
+      ],
+      "webhookId": "06afd9e7-05f0-47b1-91c6-00dd336acabe",
+      "parameters": {
+        "text": "={{ $json.analysis }}",
+        "chatId": "8634051625",
+        "additionalFields": {
+          "disable_notification": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "HMJozlOGjctgoQtt",
+          "name": "Telegram account"
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "1835cca2-ebb0-48d4-a967-94d62638070d",
+      "name": "Formater le rapport telagram",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -640,
+        304
+      ],
+      "parameters": {
+        "jsCode": "// GitHub Auditor - formate la reponse Ollama groupee pour Telegram\nconst item = $input.first().json || {};\nconst meta = $('Formater le rapport telagram').item.json;\nconst repoCount = meta ? meta.repo_count : 0;\nif (!repoCount || repoCount === 0) {\n  return [{ json: { analysis: '\\u2705 Aucun depot actif a auditer aujourd\\'hui.' } }];\n}\nlet analysis = '';\nif (item.message && item.message.content) analysis = item.message.content.trim();\nelse if (item.response && item.response.message && item.response.message.content) analysis = item.response.message.content.trim();\nelse if (typeof item === 'object') analysis = JSON.stringify(item).slice(0, 2000);\nif (!analysis || analysis.length < 50) return [{ json: { analysis: '\\u26a0 Analyse Ollama non disponible.' } }];\nconst header = '\\ud83e\\uddd1\\u200d\\ud83d\\udcbb Audit GitHub -- ' + repoCount + ' depots analyses';\nif (analysis.length > 3900) analysis = analysis.slice(0, 3897) + '\\u2026';\nreturn [{ json: { analysis: header + '\\n\\n' + analysis } }];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "189140da-0b81-4d3f-a5f0-8ac389943036",
+      "name": "Filtrer et preparer l'analyse",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1264,
+        304
+      ],
+      "parameters": {
+        "jsCode": "// GitHub Auditor - filtre et groupe tous les repos en une analyse unique\nconst items = $input.all().flatMap(i => i.json);\nconst activeRepos = items.filter(r =>\n  r.archived !== true && r.disabled !== true &&\n  r.permissions && (r.permissions.push || r.permissions.admin)\n);\nif (activeRepos.length === 0) {\n  return [{ json: { repo_count: 0, repo_list: '', ollama_body: '' } }];\n}\nconst repoSummaries = activeRepos.map((r, i) =>\n  (i+1) + '. **' + r.full_name + '**\\n' +\n  '   Description: ' + (r.description || '(aucune)') + '\\n' +\n  '   Langage: ' + (r.language || 'N/A') + '\\n' +\n  '   Topics: ' + ((r.topics && r.topics.length) ? r.topics.join(', ') : 'aucun') + '\\n' +\n  '   Activite: ' + (r.pushed_at ? r.pushed_at.slice(0,10) : '?') + '\\n' +\n  '   Issues: ' + (r.open_issues_count || 0) + '\\n' +\n  '   Visibilite: ' + (r.private ? 'Prive' : 'Public')\n).join('\\n\\n');\nconst system = \"Tu es un IA expert, un \\\"Architecte Collaborateur\\\" de code. Ta mission est de devenir le pair programmeur le plus comp\\u00e9tent, le plus m\\u00e9ticuleux, mais surtout le plus positif et le plus encourageant sur tous les projets GitHub que tu examines.\\n\\n\\ud83c\\udfaf 1. D\\u00e9finition du R\\u00f4le et de la Philosophie (Le Ton)\\nPersona : Tu es un mentor technique de niveau \\\"Staff Engineer\\\".\\nTonalit\\u00e9 Immuable : Toujours enthousiaste, ultra-constructif, respectueux.\\n\\n\\ud83d\\udca1 2. M\\u00e9thode d'Analyse\\nA. Issue Thinking \\u00b7 B. Bug/Risque \\u00b7 C. Code Review \\u00b7 D. Pull Request\\n\\n\\ud83d\\udcca 3. Format de Sortie\\n\\u2728 Rapport d'Audit Quotidien\\n\\ud83d\\udd0d Observations \\u00b7 \\u2728 Axes d'am\\u00e9lioration \\u00b7 \\ud83d\\udee0 Prochaine \\u00e9tape \\u00b7 \\u2705 Synth\\u00e8se\\nTermine par \\ud83c\\udfc6 Top 3 des d\\u00e9p\\u00f4ts les plus prometteurs.\";\nconst user = 'Analyse les depots GitHub actifs suivants.\\n\\n' +\n  'Liste des ' + activeRepos.length + ' depots a analyser :\\n\\n' +\n  repoSummaries + '\\n\\n' +\n  'Pour chaque depot : Observations, Axes d\\'amelioration, Prochaine etape, Synthese.\\n' +\n  'Termine par un Top 3 des depots les plus prometteurs.';\nconst payload = {\n  model: 'qwen2.5:3b',\n  stream: false,\n  keep_alive: 0,\n  options: { num_ctx: 16384, temperature: 0.3, num_predict: 2000 },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }]\n};\nreturn [{ json: {\n  repo_count: activeRepos.length,\n  repo_list: activeRepos.map(r => r.full_name).join(', '),\n  ollama_body: JSON.stringify(payload)\n} }];"
+      },
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Formater le rapport telagram": {
+      "main": [
+        [
+          {
+            "node": "Envoyer sur Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer et preparer l'analyse": {
+      "main": [
+        [
+          {
+            "node": "Analyser avec Ollama (qwen2.5:3b)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Horloge (06h00 tous les jours)": {
+      "main": [
+        [
+          {
+            "node": "Lister les dépôts GitHub actifs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyser avec Ollama (qwen2.5:3b)": {
+      "main": [
+        [
+          {
+            "node": "Formater le rapport telagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lister les dépôts GitHub actifs": {
+      "main": [
+        [
+          {
+            "node": "Filtrer et preparer l'analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Europe/Paris",
+    "binaryMode": "separate",
+    "callerPolicy": "never",
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
