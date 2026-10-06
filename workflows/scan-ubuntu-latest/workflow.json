@@ -1,0 +1,132 @@
+{
+  "name": "Scan ubuntu-latest — alerte Telegram",
+  "nodes": [
+    {
+      "id": "3b620792-5cda-4556-8065-c85bda1e9ddc",
+      "name": "Horloge (05h00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 5 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3a6e33bb-a3a7-4b6b-9a32-70f55e9e87f8",
+      "name": "Code — scanne les workflows GitHub",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [250, 0],
+      "parameters": {
+        "jsCode": "// ===== Scan ubuntu-latest — liste les workflows GitHub contenant runs-on: ubuntu-latest =====\n// Utilise $env.GITHUB_PAT (PAT GitHub centralisé)\n\nconst GITHUB = 'https://api.github.com';\nconst HEADERS = {\n  'Authorization': 'Bearer ' + $env.GITHUB_PAT,\n  'Accept': 'application/vnd.github+json',\n  'User-Agent': 'rennesdev-vps-ops/1.0'\n};\n\nasync function apiGet(url) {\n  const res = await $http.sendRequest({\n    method: 'GET',\n    url: url,\n    headers: HEADERS\n  });\n  if (res.statusCode >= 400) {\n    console.warn(url + ' → ' + res.statusCode);\n    return null;\n  }\n  return res.body;\n}\n\n// 1. Récupérer tous les repos actifs (non fork, non archived)\nconst repos = await apiGet(GITHUB + '/user/repos?type=owner&per_page=100&sort=updated');\nif (!repos) {\n  return [{ error: 'Impossible de récupérer la liste des repos', findings: [] }];\n}\n\nconst activeRepos = repos.filter(r => !r.fork && !r.archived);\nconsole.log(activeRepos.length + ' repos actifs à analyser');\n\n// 2. Pour chaque repo, vérifier s'il a des workflows\nconst results = [];\nlet reposWithWorkflows = 0;\nlet totalUbuntuLatest = 0;\n\nfor (const repo of activeRepos) {\n  const tree = await apiGet(GITHUB + '/repos/' + repo.full_name + '/git/trees/HEAD?recursive=1');\n  if (!tree || !tree.tree) continue;\n  \n  const workflowFiles = tree.tree.filter(f => \n    f.path.startsWith('.github/workflows/') && f.path.endsWith('.yml')\n  );\n  \n  if (workflowFiles.length === 0) continue;\n  reposWithWorkflows++;\n  \n  const repoTmp = { repo: repo.full_name, url: repo.html_url, workflows: [] };\n  \n  for (const wf of workflowFiles) {\n    const content = await apiGet(GITHUB + '/repos/' + repo.full_name + '/contents/' + wf.path);\n    if (!content || !content.content) continue;\n    \n    const decoded = atob(content.content);\n    const lines = decoded.split('\\n');\n    const ubuntuLines = [];\n    \n    for (let i = 0; i < lines.length; i++) {\n      if (lines[i].includes('runs-on: ubuntu-latest') || lines[i].includes('runs-on: ubuntu-latest')) {\n        ubuntuLines.push({ line: i + 1, content: lines[i].trim() });\n      }\n    }\n    \n    if (ubuntuLines.length > 0) {\n      repoTmp.workflows.push({ file: wf.path, ubuntuLines: ubuntuLines });\n      totalUbuntuLatest += ubuntuLines.length;\n    }\n  }\n  \n  if (repoTmp.workflows.length > 0) {\n    results.push(repoTmp);\n  }\n}\n\n// 3. Compiler le rapport structuré\nconst summary = {\n  reposScanned: activeRepos.length,\n  reposWithWorkflows: reposWithWorkflows,\n  reposWithUbuntuLatest: results.length,\n  totalUbuntuLatestOccurrences: totalUbuntuLatest,\n  details: results,\n  generatedAt: new Date().toISOString()\n};\n\nconsole.log('Rapport: ' + JSON.stringify(summary, null, 2));\nreturn [summary];\n"
+      }
+    },
+    {
+      "id": "82d08a4f-602e-495c-b04a-fb14194d4da0",
+      "name": "Ollama — analyse le rapport",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [500, 0],
+      "parameters": {
+        "url": "http://ollama:11434/api/generate",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "options": {
+          "timeout": 300000
+        },
+        "body": "={{ JSON.stringify({ model: 'qwen2.5:3b', stream: false, options: { temperature: 0.1 }, prompt: `Tu es un assistant DevOps qui analyse la configuration CI/CD de repositories GitHub.\n\nVoici les résultats du scan des workflows GitHub Actions. Pour chaque repo, des workflows utilisent le label \"runs-on: ubuntu-latest\" qui passera bientôt de Ubuntu 24.04 à Ubuntu 26.04, ce qui peut causer des régressions.\n\nDonnées du scan :\n${JSON.stringify($json, null, 2)}\n\nConsignes :\n1. Donne un résumé clair : nombre de repos concernés, nombre total d'occurrences de ubuntu-latest.\n2. Pour chaque repo listant des workflows, indique le nombre de fichiers concernés.\n3. Ajoute une recommandation : les workflows concernés devraient être figés sur \"ubuntu-24.04\" explicitement, puis testés sur \"ubuntu-26.04\" avant de migrer.\n4. Sois concis, technique, va droit au but. Utilise des emojis pour la lisibilité.\n\nRéponds en français.` }) }}"
+      }
+    },
+    {
+      "id": "13fa25ed-51cc-4e0b-9437-69b54edae0c0",
+      "name": "Code — formate le message Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [750, 0],
+      "parameters": {
+        "jsCode": "// ===== Formate le rapport pour Telegram =====\nconst scanData = $('Code — scanne les workflows GitHub').item.json;\nconst ollamaResponse = $json.response || '';\n\n// Nettoyer la réponse Ollama (enlever les guillemets de début/fin si présents)\nlet analysis = ollamaResponse.trim();\nif (analysis.startsWith('\"') && analysis.endsWith('\"')) {\n  analysis = analysis.slice(1, -1);\n}\n\n// Construire le message Telegram\nlet msg = '🤖 Scan ubuntu-latest — Rapport quotidien\\n';\nmsg += '📅 ' + new Date().toLocaleString('fr', { timeZone: 'Europe/Paris' }) + '\\n\\n';\nmsg += '📊 Repos scannés : ' + scanData.reposScanned + '\\n';\nmsg += '🔧 Repos avec workflows : ' + scanData.reposWithWorkflows + '\\n';\nmsg += '⚠️ Repos avec ubuntu-latest : ' + scanData.reposWithUbuntuLatest + '\\n';\nmsg += '📌 Occurrences totales : ' + scanData.totalUbuntuLatestOccurrences + '\\n\\n';\n\nif (scanData.details && scanData.details.length > 0) {\n  msg += '📋 Détail par repo :\\n';\n  for (const d of scanData.details) {\n    msg += '\\n🔸 ' + d.repo + '\\n';\n    for (const w of d.workflows) {\n      const files = w.file.split('/').pop();\n      const lines = w.ubuntuLines.map(l => '  L' + l.line + ' : `' + l.content + '`').join('\\n');\n      msg += '  📄 ' + files + ' (' + w.ubuntuLines.length + ' occ.)\\n' + lines + '\\n';\n    }\n  }\n  msg += '\\n---\\n';\n}\n\nif (analysis && analysis !== '') {\n  msg += '🧠 Analyse LLM :\\n' + analysis + '\\n';\n}\n\nmsg += '\\n#scanUbuntuLatest';\n\nreturn [{ text: msg }];\n"
+      }
+    },
+    {
+      "id": "6428d561-98e4-4ff0-8f73-1e54d33420d5",
+      "name": "Telegram — envoi",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1000, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "HMJozlOGjctgoQtt",
+          "name": "Telegram account"
+        }
+      },
+      "parameters": {
+        "text": "={{ $json.text }}",
+        "chatId": "8634051625",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Horloge (05h00)": {
+      "main": [
+        [
+          {
+            "node": "Code — scanne les workflows GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — scanne les workflows GitHub": {
+      "main": [
+        [
+          {
+            "node": "Ollama — analyse le rapport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama — analyse le rapport": {
+      "main": [
+        [
+          {
+            "node": "Code — formate le message Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — formate le message Telegram": {
+      "main": [
+        [
+          {
+            "node": "Telegram — envoi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Paris"
+  },
+  "active": true,
+  "tags": ["scan"]
+}
