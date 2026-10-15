@@ -1,123 +1,123 @@
-# GitHub Auditor — Audit quotidien IA de tous vos projets
+# GitHub Auditor — Daily AI Audit for All Your Projects
 
-> Un workflow n8n qui analyse **chaque matin à 06h00** tous vos dépôts GitHub actifs en une seule analyse groupée via un LLM local, et vous envoie un rapport bienveillant et constructif sur Telegram.
-
----
-
-## ✨ Prompt idéal de départ
-
-> *« Crée un workflow n8n « GitHub Auditor » qui tous les jours à 6h00 vérifie tous mes projets GitHub actifs, les analyse via Ollama avec le rôle d'un « Architecte Collaborateur » enthousiaste et constructif, et m'envoie le rapport sur Telegram. »*
+> An n8n workflow that **analyzes all your active GitHub repositories every morning at 06:00** in a single batched analysis via a local LLM, and delivers a friendly, constructive report to Telegram.
 
 ---
 
-## 🎯 Ce que fait le workflow
+## ✨ Original Prompt
 
-| Étape | Description |
+> *"Create an n8n 'GitHub Auditor' workflow that checks all my active GitHub projects every day at 6:00 AM, analyzes them via Ollama as an enthusiastic and constructive 'Collaborative Architect,' and sends me the report on Telegram."*
+
+---
+
+## 🎯 What It Does
+
+| Step | Description |
 |---|---|
-| **06h00** | Cron quotidien (Europe/Paris) |
-| **Étape 1** | Appelle l'API GitHub (`/user/repos`) pour lister **tous les dépôts** où vous avez les droits push |
-| **Étape 2** | Filtre les repos actifs (non archivés, non disabled) |
-| **Étape 3** | **Groupe tous les dépôts actifs en une seule analyse** (au lieu d'un appel par dépôt) et construit le prompt pour Ollama |
-| **Étape 4** | Envoie le prompt à **Ollama (modèle `qwen2.5:3b`)** — **un seul appel API** qui analyse tous les projets d'un coup |
-| **Étape 5** | Formate la réponse de l'IA pour Telegram (≤ 4000 caractères) |
-| **Étape 6** | Envoie le rapport d'audit sur **Telegram** |
+| **06:00** | Daily cron (Europe/Paris) |
+| **Step 1** | Calls the GitHub API (`/user/repos`) to list **all repositories** where you have push access |
+| **Step 2** | Filters active repos (not archived, not disabled) |
+| **Step 3** | **Groups all active repositories into a single analysis** (instead of one call per repo) and builds the prompt for Ollama |
+| **Step 4** | Sends the prompt to **Ollama (model `qwen2.5:3b`)** — **a single API call** that analyzes all projects at once |
+| **Step 5** | Formats the AI response for Telegram (≤ 4000 characters) |
+| **Step 6** | Sends the audit report to **Telegram** |
 
-### Pourquoi le batching ?
+### Why Batching?
 
-L'ancienne version envoyait **un appel Ollama par dépôt** (18 appels pour 18 repos). Chaque appel prenant ~30-90s, la durée totale dépassait le timeout du runner n8n (300s). La nouvelle version envoie **tous les dépôts dans une seule analyse**, ce qui :
-- ✅ Tient dans la fenêtre de 300s
-- ✅ Évite de charger/décharger le modèle LLM entre chaque repo
-- ✅ Produit un rapport unique plus synthétique avec un **Top 3 des projets les plus prometteurs**
+The old version sent **one Ollama call per repository** (18 calls for 18 repos). Each call took ~30–90s, so total duration exceeded the n8n runner timeout (300s). The new version sends **all repositories in a single analysis**, which:
+- ✅ Fits within the 300s window
+- ✅ Avoids loading/unloading the LLM model between repos
+- ✅ Produces a single, more concise report with a **Top 3 most promising projects**
 
 ---
 
-## 🧠 Le prompt système : « Architecte Collaborateur »
+## 🧠 The System Prompt: "Collaborative Architect"
 
-Le LLM utilise un **système de rôle** complet qui le transforme en pair programmeur de niveau **Staff Engineer** :
+The LLM uses a **complete role system** that transforms it into a Staff Engineer-level programming peer:
 
-| Aspect | Détail |
+| Aspect | Detail |
 |---|---|
-| **Persona** | Mentor technique enthousiaste, constructif, jamais condescendant |
-| **Analyse** | 4 dimensions : Issues manquantes, Bugs/Risques, Code Review (architecture/sécurité/perf), PR |
-| **Format** | Rapport structuré avec emojis : ✨ Observation · 💡 Axes d'amélioration · 🛠 Prochaine étape · ✅ Synthèse + 🏆 Top 3 |
-| **Ton** | Ultra-positif : chaque critique est formulée comme une suggestion d'amélioration |
+| **Persona** | Enthusiastic technical mentor, constructive, never condescending |
+| **Analysis** | 4 dimensions: Missing issues, Bugs/Risks, Code Review (architecture/security/perf), PRs |
+| **Format** | Structured report with emojis: ✨ Observation · 💡 Improvement areas · 🛠 Next step · ✅ Summary + 🏆 Top 3 |
+| **Tone** | Ultra-positive: every critique is framed as a suggestion for improvement |
 
 ---
 
-## 🏗️ Architecture n8n (6 nœuds)
+## 🏗️ n8n Architecture (6 nodes)
 
 ```
-Horloge (06h00)
+Clock (06:00)
   │
   ▼
-HTTP Request — Lister les dépôts GitHub (API /user/repos)
+HTTP Request — List GitHub repos (API /user/repos)
   │
   ▼
-Code — Filtrer + Grouper tous les repos en 1 prompt Ollama
+Code — Filter + Group all repos into 1 Ollama prompt
   │
   ▼
-HTTP Request — UN seul appel Ollama /api/chat (qwen2.5:3b, timeout 5 min)
+HTTP Request — ONE Ollama call /api/chat (qwen2.5:3b, 5 min timeout)
   │
   ▼
-Code — Formater la réponse (↘ 3900 caractères max pour Telegram)
+Code — Format response (≤ 3900 chars for Telegram)
   │
   ▼
-Telegram — Envoyer le rapport (chat 8634051625, notification silencieuse)
+Telegram — Send report (chat 8634051625, silent notification)
 ```
 
 ---
 
-## ⚙️ Dépendances
+## ⚙️ Dependencies
 
-| Élément | Version / Détail |
+| Component | Version / Detail |
 |---|---|
-| **n8n** | ≥ 2.41 (workflow publié via la mécanique snapshot + outbox) |
-| **Ollama** | Modèle `qwen2.5:3b` local (`keep_alive: 0` → décharge après usage) |
-| **GitHub PAT** | Variable d'environnement `GITHUB_PAT` (Bearer token, accès `repo` + `read:user`) |
-| **Telegram** | Bot token stocké en credential n8n, chat ID `8634051625` |
+| **n8n** | ≥ 2.41 (workflow published via snapshot + outbox mechanism) |
+| **Ollama** | Model `qwen2.5:3b` local (`keep_alive: 0` → unloads after use) |
+| **GitHub PAT** | Environment variable `GITHUB_PAT` (Bearer token, `repo` + `read:user` scope) |
+| **Telegram** | Bot token stored in n8n credential, chat ID `8634051625` |
 | **DB** | PostgreSQL 17 (n8n_db) |
 
 ---
 
 ## 📥 Installation
 
-Le workflow est déployé directement dans n8n via la base de données PostgreSQL.
+The workflow is deployed directly into n8n via PostgreSQL.
 
-### Méthode SQL
+### SQL Method
 
 ```sql
--- 1. Insérer le workflow_entity
--- 2. Créer le snapshot workflow_history
--- 3. Ajouter shared_workflow (projectId nécessaire)
--- 4. Aligner versionId = activeVersionId
--- 5. Créer la ligne workflow_published_version
--- 6. Insérer dans workflow_publication_outbox (status: pending, reason: publish)
--- 7. Redémarrer n8n
+-- 1. Insert workflow_entity
+-- 2. Create workflow_history snapshot
+-- 3. Add shared_workflow (requires projectId)
+-- 4. Align versionId = activeVersionId
+-- 5. Create workflow_published_version row
+-- 6. Insert into workflow_publication_outbox (status: pending, reason: publish)
+-- 7. Restart n8n
 ```
 
-### Fichier fourni
+### Provided File
 
-- [`workflow.json`](./workflow.json) — export du workflow n8n complet (IDs des nœuds, connections, code JS, paramètres)
-- ⚠️ Les secrets (PAT GitHub, clé Telegram) ne sont **pas** dans ce fichier : ils sont lus via `$env.GITHUB_PAT` (variable d'env) et le credential Telegram stocké dans n8n
-
----
-
-## 🔒 Sécurité
-
-- **Aucun secret dans le code** : le PAT GitHub est lu via `$env.GITHUB_PAT` (variable d'environnement n8n)
-- **Aucune donnée ne quitte le VPS** pour l'analyse : Ollama tourne en local
-- **Le credential Telegram** est stocké dans n8n (chiffré par `N8N_ENCRYPTION_KEY`)
-- **Le modèle Ollama est déchargé** après chaque analyse (`keep_alive: 0`)
+- [`workflow.json`](./workflow.json) — full n8n workflow export (node IDs, connections, JS code, parameters)
+- ⚠️ Secrets (GitHub PAT, Telegram key) are **not** in this file: they are read via `$env.GITHUB_PAT` (env variable) and the Telegram credential stored in n8n
 
 ---
 
-## 🚀 Prochaine évolution possible
+## 🔒 Security
 
-- [ ] Ajouter la récupération du README.md de chaque repo pour enrichir l'analyse
-- [ ] Ajouter les derniers commits (7 jours) dans le contexte
-- [ ] Ajouter les PR ouvertes et issues récentes
-- [ ] Générer automatiquement des issues GitHub à partir des suggestions de l'IA
+- **No secrets in code**: GitHub PAT is read via `$env.GITHUB_PAT` (n8n environment variable)
+- **No data leaves the VPS** for analysis: Ollama runs locally
+- **Telegram credential** is stored in n8n (encrypted with `N8N_ENCRYPTION_KEY`)
+- **Ollama model is unloaded** after each analysis (`keep_alive: 0`)
 
 ---
 
-*Fait partie de l'infrastructure [rennesdev-vps-ops](https://github.com/Ruaudel-Emmanuel/rennesdev-vps-ops) — un VPS qui tourne tout seul.*
+## 🚀 Possible Next Steps
+
+- [ ] Fetch each repo's README.md to enrich the analysis
+- [ ] Include last 7 days of commits in the context
+- [ ] Include open PRs and recent issues
+- [ ] Auto-generate GitHub issues from AI suggestions
+
+---
+
+*Part of the [rennesdev-vps-ops](https://github.com/Ruaudel-Emmanuel/rennesdev-vps-ops) infrastructure — a self-running VPS.*
