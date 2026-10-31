@@ -1,5 +1,21 @@
 # GitHub Auditor — Votre revue de code quotidienne, automatisée et privée
 
+---
+
+## 🤝 Ce projet, c'est aussi mon métier
+
+**Emmanuel Ruaudel — Directeur de la Transformation Numérique pour TPE/PME.**
+J'aide les dirigeants à libérer 5 à 10 h par semaine en automatisant leurs tâches
+répetitives : audit des processus, cas d'usage IA à fort ROI, déploiement et
+fiabilisation (n8n · Python · IA locale).
+
+👉 [LIGNE D'ACCROCHE DU REPO ICI]
+
+📧 [ruaudel.emmanuel@orange.fr](mailto:ruaudel.emmanuel@orange.fr) · 🌐 [rennesdev.fr](https://rennesdev.fr)
+
+
+
+
 > Un workflow n8n qui **analyse chaque matin l'ensemble de vos dépôts GitHub** via un LLM local (Ollama), et vous livre un rapport bienveillant et actionnable sur Telegram.  
 > **Aucune donnée ne quitte votre serveur.**
 
