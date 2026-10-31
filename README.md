@@ -1,5 +1,7 @@
 # GitHub Auditor — Your Daily Code Review, Automated & Private
 
+Behind this project: I'm a Digital Transformation Director for French SMEs — I help business owners save 5–10 hours a week by automating repetitive tasks (n8n · Python · on-premise AI). Contact: ruaudel.emmanuel@orange.fr ·  rennesdev.fr
+
 > An n8n workflow that **analyzes all your GitHub repositories every morning** using a local LLM (Ollama), and delivers a friendly, actionable report to Telegram.  
 > **No data ever leaves your server.**
 
