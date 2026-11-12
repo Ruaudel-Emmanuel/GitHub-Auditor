@@ -1,4 +1,4 @@
-# GitHub Auditor — Votre revue de code quotidienne, automatisée et privée
+# GitHub Auditor — Votre revue de code quotidienne, automatisée
 
 ---
 
@@ -7,7 +7,7 @@
 **Emmanuel Ruaudel — Directeur de la Transformation Numérique pour TPE/PME.**
 J'aide les dirigeants à libérer 5 à 10 h par semaine en automatisant leurs tâches
 répetitives : audit des processus, cas d'usage IA à fort ROI, déploiement et
-fiabilisation (n8n · Python · IA locale).
+fiabilisation (n8n · Python · IA).
 
 👉 [LIGNE D'ACCROCHE DU REPO ICI]
 
@@ -16,8 +16,8 @@ fiabilisation (n8n · Python · IA locale).
 
 
 
-> Un workflow n8n qui **analyse chaque matin l'ensemble de vos dépôts GitHub** via un LLM local (Ollama), et vous livre un rapport bienveillant et actionnable sur Telegram.  
-> **Aucune donnée ne quitte votre serveur.**
+> Un workflow n8n qui **analyse chaque matin l'ensemble de vos dépôts GitHub** via Mistral Cloud, et vous livre un rapport bienveillant et actionnable sur Telegram.  
+> **Seules les métadonnées des dépôts sont envoyées à l'IA — jamais votre code source.**
 
 ---
 
@@ -47,7 +47,7 @@ Vous gérez **plusieurs projets** — certains personnels, d'autres professionne
 
 | Caractéristique | Bénéfice |
 |---|---|
-| 🔒 **100 % privé** | Ollama tourne en local sur votre infra — **zéro donnée vers le cloud** |
+| 🔒 **Le code n'est jamais envoyé à l'IA** | Seules les métadonnées (nom, description, langage, topics, dernier push, issues ouvertes) partent vers Mistral — **aucun code source** |
 | ⚡ **Analyse groupée** | Tous vos repos analysés **en un seul appel** LLM (gain x18 vs. un par un) |
 | 🤝 **Ton « Architecte Collaboratif »** | Pas un robot froid — un **pair programmeur enthousiaste** qui suggère, ne juge pas |
 | 📱 **Livré sur Telegram** | Vous lisez votre rapport au réveil, pas besoin d'ouvrir n8n |
@@ -63,7 +63,7 @@ Vous gérez **plusieurs projets** — certains personnels, d'autres professionne
 | **🧑‍💻 Développeur solo (5-20 repos)** | Avoir une vue d'ensemble sans y passer la matinée |
 | **🏢 CTO / lead dev (petite équipe)** | Superviser la qualité sans micromanager |
 | **🔧 Mainteneur open-source** | Suivre plusieurs projets sans en laisser un à l'abandon |
-| **🏠 Self-hosteur / homelaber** | IA privée + infra maîtrisée, pas de dépendance cloud |
+| **🏠 Self-hosteur / homelaber** | Le pipeline tourne sur votre propre VPS n8n — vous gardez le contrôle total |
 
 ---
 
@@ -87,7 +87,7 @@ L'IA adopte le rôle d'un **Staff Engineer** qui examine vos projets avec 4 dime
    ↓
 📡 GitHub API → Liste tous vos repos
    ↓
-🧠 Un seul appel Ollama (qwen2.5:3b) → analyse groupée
+🧠 Un seul appel Mistral Cloud (mistral-small-latest) → analyse groupée
    ↓
 📱 Telegram → Rapport livré sur votre téléphone
 ```
@@ -98,7 +98,7 @@ L'IA adopte le rôle d'un **Staff Engineer** qui examine vos projets avec 4 dime
 
 ### Prérequis
 - **n8n** ≥ 2.41 (et une instance qui tourne)
-- **Ollama** avec le modèle `qwen2.5:3b` disponible localement  
+- **Une clé API Mistral** (`MISTRAL_API_KEY`) avec accès au modèle `mistral-small-latest`  
 - **Un token GitHub** (PAT) avec scope `repo` + `read:user`  
 - **Un bot Telegram** (token dans un credential n8n)
 
@@ -115,10 +115,10 @@ L'IA adopte le rôle d'un **Staff Engineer** qui examine vos projets avec 4 dime
 
 ## 🔒 Sécurité & Vie privée
 
-- ✅ **Aucune donnée ne quitte votre VPS/serveur**
-- ✅ Ollama tourne en local — pas d'appel API externe pour l'analyse
-- ✅ Le token Telegram est stocké chiffré dans n8n
-- ✅ Le modèle Ollama est déchargé après chaque analyse (`keep_alive: 0`)
+- ✅ **Aucun code source n'est envoyé à l'IA** — seules les métadonnées des dépôts (nom, description, langage, topics, date du dernier push, nombre d'issues ouvertes)
+- ✅ Un seul appel LLM groupé par jour vers **Mistral Cloud** (`mistral-small-latest`)
+- ✅ Le PAT GitHub est lu via `$env.GITHUB_PAT`, le token Telegram est stocké chiffré dans n8n
+- ✅ Chaque rapport est commité dans ce dépôt (`agent-github/audit-<date>.md`) et envoyé sur Telegram
 
 ---
 
