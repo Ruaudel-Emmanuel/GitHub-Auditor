@@ -1,9 +1,9 @@
-# GitHub Auditor — Your Daily Code Review, Automated & Private
+# GitHub Auditor — Your Daily Code Review, Automated
 
 Behind this project: I'm a Digital Transformation Director for French SMEs — I help business owners save 5–10 hours a week by automating repetitive tasks (n8n · Python · on-premise AI). Contact: ruaudel.emmanuel@orange.fr ·  rennesdev.fr
 
-> An n8n workflow that **analyzes all your GitHub repositories every morning** using a local LLM (Ollama), and delivers a friendly, actionable report to Telegram.  
-> **No data ever leaves your server.**
+> An n8n workflow that **analyzes all your GitHub repositories every morning** using Mistral Cloud, and delivers a friendly, actionable report to Telegram.  
+> **Only repo metadata is sent to the AI — never your source code.**
 
 ---
 
@@ -33,7 +33,7 @@ You manage **multiple projects** — some personal, some professional. Keeping u
 
 | Feature | Benefit |
 |---|---|
-| 🔒 **100 % private** | Ollama runs locally on your infra — **zero data to the cloud** |
+| 🔒 **Code never sent to the AI** | Only metadata (name, description, language, topics, last push, open issues) goes to Mistral — **no source code** |
 | ⚡ **Batched analysis** | All repos analyzed **in a single LLM call** (18x faster than one-by-one) |
 | 🤝 **"Collaborative Architect" tone** | Not a cold robot — an **enthusiastic engineering peer** who suggests, not judges |
 | 📱 **Delivered to Telegram** | Read your report first thing in the morning, no n8n login needed |
@@ -49,7 +49,7 @@ You manage **multiple projects** — some personal, some professional. Keeping u
 | **🧑‍💻 Solo dev / indie hacker (5–20 repos)** | Bird's-eye view without burning your morning |
 | **🏢 CTO / lead dev (small team)** | Code quality oversight without micromanaging |
 | **🔧 Open‑source maintainer** | Keep multiple projects healthy, none left behind |
-| **🏠 Self-hoster / homelabber** | Private AI + full control, zero cloud dependency |
+| **🏠 Self-hoster / homelabber** | Runs on your own n8n VPS — you keep full control of the pipeline |
 
 ---
 
@@ -73,7 +73,7 @@ The AI acts as a **Staff Engineer** who reviews your projects across 4 dimension
    ↓
 📡 GitHub API → List all your repos
    ↓
-🧠 Single Ollama call (qwen2.5:3b) → batched analysis
+🧠 Single Mistral Cloud call (mistral-small-latest) → batched analysis
    ↓
 📱 Telegram → Report delivered to your phone
 ```
@@ -84,7 +84,7 @@ The AI acts as a **Staff Engineer** who reviews your projects across 4 dimension
 
 ### Prerequisites
 - **n8n** ≥ 2.41 (running instance)
-- **Ollama** with `qwen2.5:3b` model available locally
+- **A Mistral API key** (`MISTRAL_API_KEY`) with access to `mistral-small-latest`
 - **A GitHub PAT** (token) with `repo` + `read:user` scopes
 - **A Telegram bot** (token stored as n8n credential)
 
@@ -101,10 +101,10 @@ The AI acts as a **Staff Engineer** who reviews your projects across 4 dimension
 
 ## 🔒 Security & Privacy
 
-- ✅ **No data leaves your VPS/server**
-- ✅ Ollama runs locally — no external API calls for analysis
-- ✅ Telegram token is stored encrypted in n8n
-- ✅ Ollama model unloads after each analysis (`keep_alive: 0`)
+- ✅ **No source code is ever sent to the AI** — only repo metadata (name, description, language, topics, last push date, open issue count)
+- ✅ One batched LLM call per day to **Mistral Cloud** (`mistral-small-latest`)
+- ✅ GitHub PAT read from env (`$env.GITHUB_PAT`), Telegram token stored encrypted in n8n
+- ✅ Each report is committed to this repo (`agent-github/audit-<date>.md`) and sent to Telegram
 
 ---
 
