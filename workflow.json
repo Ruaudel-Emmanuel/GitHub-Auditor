@@ -1,15 +1,15 @@
 {
-  "name": "GitHub Auditor",
-  "description": "Audit quotidien groupé de tous les dépôts GitHub actifs à 06h00 — une analyse Ollama unique (qwen2.5:3b) pour tous les repos, rapport Telegram.",
+  "name": "GitHub Auditor — audit quotidien",
+  "description": "Audit quotidien groupé de tous les dépôts GitHub actifs à 06h00 Europe/Paris — appel Mistral Cloud (mistral-small-latest) + rapport Telegram + commit du rapport dans agent-github/.",
   "nodes": [
     {
-      "id": "7a940423-94c6-4daa-bdcc-f3d744c20a63",
-      "name": "Horloge (06h00 tous les jours)",
+      "id": "5d09ee31-968b-46cd-a121-c5f439bb9430",
+      "name": "Horloge (06h00)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        -1808,
-        304
+        0,
+        0
       ],
       "parameters": {
         "rule": {
@@ -23,117 +23,233 @@
       }
     },
     {
-      "id": "3d8d4352-aa3c-4340-bddb-7eab02a03c59",
+      "id": "e9603564-4d5f-4c89-a5b7-a796a23783d3",
       "name": "Lister les dépôts GitHub actifs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1568,
-        304
+        240,
+        0
       ],
       "parameters": {
+        "method": "GET",
         "url": "https://api.github.com/user/repos?per_page=100&sort=updated&direction=desc&type=all",
-        "options": {
-          "timeout": 30000,
-          "redirect": {}
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.GITHUB_PAT }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
             }
           ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
         }
       }
     },
     {
-      "id": "189140da-0b81-4d3f-a5f0-8ac389943036",
+      "id": "53630a2a-9050-424a-adf6-b97be096ab53",
       "name": "Filtrer et préparer l'analyse",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1264,
-        304
+        480,
+        0
       ],
       "parameters": {
-        "jsCode": "// GitHub Auditor - filtre et groupe tous les repos en une analyse unique\nconst items = $input.all().flatMap(i => i.json);\nconst activeRepos = items.filter(r =>\n  r.archived !== true && r.disabled !== true &&\n  r.permissions && (r.permissions.push || r.permissions.admin)\n);\nif (activeRepos.length === 0) {\n  return [{ json: { repo_count: 0, repo_list: '', ollama_body: '' } }];\n}\nconst repoSummaries = activeRepos.map((r, i) =>\n  (i+1) + '. **' + r.full_name + '**\\n' +\n  '   Description: ' + (r.description || '(aucune)') + '\\n' +\n  '   Langage: ' + (r.language || 'N/A') + '\\n' +\n  '   Topics: ' + ((r.topics && r.topics.length) ? r.topics.join(', ') : 'aucun') + '\\n' +\n  '   Activite: ' + (r.pushed_at ? r.pushed_at.slice(0,10) : '?') + '\\n' +\n  '   Issues: ' + (r.open_issues_count || 0) + '\\n' +\n  '   Visibilite: ' + (r.private ? 'Prive' : 'Public')\n).join('\\n\\n');\nconst system = \"Tu es un IA expert, un \\\"Architecte Collaborateur\\\" de code. Ta mission est de devenir le pair programmeur le plus comp\\u00e9tent, le plus m\\u00e9ticuleux, mais surtout le plus positif et le plus encourageant sur tous les projets GitHub que tu examines.\\n\\n\\ud83c\\udfaf 1. D\\u00e9finition du R\\u00f4le et de la Philosophie (Le Ton)\\nPersona : Tu es un mentor technique de niveau \\\"Staff Engineer\\\".\\nTonalit\\u00e9 Immuable : Toujours enthousiaste, ultra-constructif, respectueux.\\n\\n\\ud83d\\udca1 2. M\\u00e9thode d'Analyse\\nA. Issue Thinking \\u00b7 B. Bug/Risque \\u00b7 C. Code Review \\u00b7 D. Pull Request\\n\\n\\ud83d\\udcca 3. Format de Sortie\\n\\u2728 Rapport d'Audit Quotidien\\n\\ud83d\\udd0d Observations \\u00b7 \\u2728 Axes d'am\\u00e9lioration \\u00b7 \\ud83d\\udee0 Prochaine \\u00e9tape \\u00b7 \\u2705 Synth\\u00e8se\\nTermine par \\ud83c\\udfc6 Top 3 des d\\u00e9p\\u00f4ts les plus prometteurs.\";\nconst user = 'Analyse les depots GitHub actifs suivants.\\n\\n' +\n  'Liste des ' + activeRepos.length + ' depots a analyser :\\n\\n' +\n  repoSummaries + '\\n\\n' +\n  'Pour chaque depot : Observations, Axes d\\'amelioration, Prochaine etape, Synthese.\\n' +\n  'Termine par un Top 3 des depots les plus prometteurs.';\nconst payload = {\n  model: 'qwen2.5:3b',\n  stream: false,\n  keep_alive: 0,\n  options: { num_ctx: 16384, temperature: 0.3, num_predict: 2000 },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }]\n};\nreturn [{ json: {\n  repo_count: activeRepos.length,\n  repo_list: activeRepos.map(r => r.full_name).join(', '),\n  ollama_body: JSON.stringify(payload)\n} }];"
+        "jsCode": "// GitHub Auditor - filtre les repos actifs et construit le payload Mistral (analyse groupee, 1 appel)\nconst items = $input.all().flatMap(i => i.json);\nconst activeRepos = items.filter(r =>\n  r.archived !== true && r.disabled !== true &&\n  r.permissions && (r.permissions.push || r.permissions.admin)\n);\nconst today = new Date().toISOString().slice(0, 10);\nif (activeRepos.length === 0) {\n  return [{ json: { repo_count: 0, repo_list: '', audit_date: today, mistral_body: '' } }];\n}\nconst repoSummaries = activeRepos.map((r, idx) =>\n  (idx + 1) + '. **' + r.full_name + '**\\n' +\n  '   Description: ' + (r.description || '(aucune)') + '\\n' +\n  '   Langage: ' + (r.language || 'N/A') + '\\n' +\n  '   Topics: ' + ((r.topics && r.topics.length) ? r.topics.join(', ') : 'aucun') + '\\n' +\n  '   Dernier push: ' + (r.pushed_at ? r.pushed_at.slice(0, 10) : '?') + '\\n' +\n  '   Issues ouvertes: ' + (r.open_issues_count || 0) + '\\n' +\n  '   Visibilite: ' + (r.private ? 'Prive' : 'Public')\n).join('\\n\\n');\nconst system = \"Tu es un IA expert, un \\\"Architecte Collaborateur\\\" de code. Ta mission est de devenir le pair programmeur le plus compétent, le plus méticuleux, mais surtout le plus positif et le plus encourageant sur tous les projets GitHub que tu examines.\\n\\n🎯 1. Définition du Rôle et de la Philosophie (Le Ton)\\nPersona : Tu es un mentor technique de niveau \\\"Staff Engineer\\\".\\nTonalité Immuable : Toujours enthousiaste, ultra-constructif, respectueux.\\n\\n💡 2. Méthode d'Analyse\\nA. Issue Thinking · B. Bug/Risque · C. Code Review · D. Pull Request\\n\\n📊 3. Format de Sortie\\n✨ Rapport d'Audit Quotidien\\n🔍 Observations · ✨ Axes d'amélioration · 🛠 Prochaine étape · ✅ Synthèse\\nTermine par 🏆 Top 3 des dépôts les plus prometteurs.\";\nconst user = 'Analyse les depots GitHub actifs suivants.\\n\\nListe des ' + activeRepos.length + ' depots a analyser :\\n\\n' + repoSummaries + '\\n\\nPour chaque depot : Observations, Axes d’amelioration, Prochaine etape, Synthese.\\nTermine par un Top 3 des depots les plus prometteurs.';\nconst payload = {\n  model: 'mistral-small-latest',\n  messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n  max_tokens: 3000,\n  temperature: 0.3\n};\nreturn [{ json: {\n  repo_count: activeRepos.length,\n  repo_list: activeRepos.map(r => r.full_name).join(', '),\n  audit_date: today,\n  mistral_body: JSON.stringify(payload)\n} }];\n",
+        "mode": "runOnceForAllItems"
       }
     },
     {
-      "id": "18edc322-c19c-4659-a15f-b67c46b94987",
-      "name": "Analyser avec Ollama (qwen2.5:3b)",
+      "id": "9ea44868-733f-4e1d-80d4-e085a1c1dd7a",
+      "name": "Analyser avec Mistral (batch)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -944,
-        304
+        720,
+        0
       ],
       "parameters": {
-        "url": "http://ollama:11434/api/chat",
-        "body": "={{ $json.ollama_body }}",
         "method": "POST",
-        "options": {
-          "timeout": 300000,
-          "redirect": {}
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MISTRAL_API_KEY }}"
+            }
+          ]
         },
         "sendBody": true,
-        "contentType": "raw",
-        "sendHeaders": true,
-        "rawContentType": "application/json",
-        "headerParameters": {
-          "parameters": []
-        }
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.mistral_body }}"
       }
     },
     {
-      "id": "1835cca2-ebb0-48d4-a967-94d62638070d",
-      "name": "Formater le rapport Telegram",
+      "id": "515c5c49-523a-4351-a850-e9fb689398e1",
+      "name": "Formater le rapport",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -640,
-        304
+        960,
+        0
       ],
       "parameters": {
-        "jsCode": "// GitHub Auditor - formate la reponse Ollama groupee pour Telegram\nconst item = $input.first().json || {};\nconst meta = $('Filtrer et preparer l\\'analyse').item.json;\nconst repoCount = meta ? meta.repo_count : 0;\nif (!repoCount || repoCount === 0) {\n  return [{ json: { analysis: '\\u2705 Aucun depot actif a auditer aujourd\\'hui.' } }];\n}\nlet analysis = '';\nif (item.message && item.message.content) analysis = item.message.content.trim();\nelse if (item.response && item.response.message && item.response.message.content) analysis = item.response.message.content.trim();\nelse if (typeof item === 'object') analysis = JSON.stringify(item).slice(0, 2000);\nif (!analysis || analysis.length < 50) return [{ json: { analysis: '\\u26a0 Analyse Ollama non disponible.' } }];\nconst header = '\\ud83e\\uddd1\\u200d\\ud83d\\udcbb Audit GitHub -- ' + repoCount + ' depots analyses';\nif (analysis.length > 3900) analysis = analysis.slice(0, 3897) + '\\u2026';\nreturn [{ json: { analysis: header + '\\n\\n' + analysis } }];"
+        "jsCode": "// GitHub Auditor - formate la reponse Mistral pour Telegram + prepare le commit markdown (base64)\nconst prev = $(\"Filtrer et préparer l'analyse\").first().json;\nconst item = $input.first().json;\nlet analysis = '';\nconst ch = item && item.choices && item.choices[0];\nif (ch && ch.message && ch.message.content) analysis = ch.message.content.trim();\nif (!analysis || analysis.length < 20) {\n  analysis = '⚠️ Analyse Mistral indisponible. Reponse brute : ' + JSON.stringify(item).slice(0, 800);\n}\nif (analysis.length > 3800) analysis = analysis.slice(0, 3797) + '…';\nconst date = prev.audit_date || new Date().toISOString().slice(0, 10);\nconst count = prev.repo_count || 0;\nconst header = '🧑‍💻 Audit GitHub — ' + count + ' dépôts analysés — ' + date;\nconst md = '# Audit Agent Github - ' + date + '\\n\\n' + analysis + '\\n\\n---\\n*Genere par GitHub Auditor (Mistral Cloud)*\\n';\nreturn [{ json: {\n  analysis: header + '\\n\\n' + analysis,\n  audit_date: date,\n  repo_count: count,\n  audit_md_b64: Buffer.from(md, 'utf8').toString('base64')\n} }];\n",
+        "mode": "runOnceForAllItems"
       }
     },
     {
-      "id": "75c7c4a2-5aaa-4b0c-af5f-f64ba9725c9f",
+      "id": "7c3ff05e-7d25-42b9-a5ce-553ad2e792c9",
       "name": "Envoyer sur Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -368,
-        304
+        1200,
+        -120
       ],
-      "webhookId": "06afd9e7-05f0-47b1-91c6-00dd336acabe",
       "parameters": {
-        "text": "={{ $json.analysis }}",
+        "text": "={{ (\"\" + ($json.analysis)).slice(0, 4000) }}",
         "chatId": "8634051625",
         "additionalFields": {
-          "disable_notification": true
+          "appendAttribution": false
         }
       },
       "credentials": {
         "telegramApi": {
-          "id": "HMJozlOGjctgoQtt",
+          "id": "REPLACE_ME",
           "name": "Telegram account"
         }
       }
+    },
+    {
+      "id": "29940b94-8057-4ea3-83ca-e57107c5d464",
+      "name": "Committer l'audit dans le repo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.github.com/repos/Ruaudel-Emmanuel/GitHub-Auditor/contents/agent-github/audit-{{ $json.audit_date }}.md",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_PAT }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.commit_body }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "a1111111-1111-4111-8111-111111111111",
+      "name": "Vérifier si l'audit du jour existe",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/Ruaudel-Emmanuel/GitHub-Auditor/contents/agent-github/audit-{{ $json.audit_date }}.md",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_PAT }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "a2222222-2222-4222-8222-222222222222",
+      "name": "Préparer le commit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// prépare le body du PUT contents (avec sha si le fichier existe déjà)\nconst prev = $(\"Formater le rapport\").first().json;\nconst getResp = $input.first().json;\nconst sha = getResp && getResp.sha ? getResp.sha : null;\nconst body = {\n  message: \"Audit GitHub \" + prev.audit_date + \" [skip ci]\",\n  content: prev.audit_md_b64,\n  branch: \"main\"\n};\nif (sha) body.sha = sha;\nreturn [{ json: { audit_date: prev.audit_date, commit_body: JSON.stringify(body) } }];\n",
+        "mode": "runOnceForAllItems"
+      }
     }
   ],
-  "settings": {
-    "timezone": "Europe/Paris",
-    "binaryMode": "separate",
-    "callerPolicy": "never",
-    "executionOrder": "v1",
-    "saveManualExecutions": true
-  },
   "connections": {
-    "Horloge (06h00 tous les jours)": {
+    "Horloge (06h00)": {
       "main": [
         [
           {
@@ -159,34 +275,69 @@
       "main": [
         [
           {
-            "node": "Analyser avec Ollama (qwen2.5:3b)",
+            "node": "Analyser avec Mistral (batch)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Analyser avec Ollama (qwen2.5:3b)": {
+    "Analyser avec Mistral (batch)": {
       "main": [
         [
           {
-            "node": "Formater le rapport Telegram",
+            "node": "Formater le rapport",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Formater le rapport Telegram": {
+    "Formater le rapport": {
       "main": [
         [
           {
             "node": "Envoyer sur Telegram",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Vérifier si l'audit du jour existe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vérifier si l'audit du jour existe": {
+      "main": [
+        [
+          {
+            "node": "Préparer le commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer le commit": {
+      "main": [
+        [
+          {
+            "node": "Committer l'audit dans le repo",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
     }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timeZone": "Europe/Paris",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   }
 }
